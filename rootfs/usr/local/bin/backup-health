@@ -1,0 +1,14 @@
+#!/bin/bash
+set -uo pipefail
+
+DATA=/data
+
+if [ ! -d "$SOURCE_FOLDER" ] || ! ls -A "$SOURCE_FOLDER" > /dev/null 2>&1; then
+    echo "$SOURCE_FOLDER cannot be read"
+    exit 1
+fi
+if [ ! -d "$DATA/.git" ] || ! touch "$DATA/.git/health" 2> /dev/null || ! rm -f "$DATA/.git/health"; then
+    echo "$DATA cannot be written"
+    exit 1
+fi
+echo Ok

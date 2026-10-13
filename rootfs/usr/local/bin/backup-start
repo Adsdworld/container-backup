@@ -1,0 +1,26 @@
+#!/bin/bash
+# Runs a copy now, then every BACKUP_INTERVAL seconds, counted from the start
+# of the previous copy.
+set -uo pipefail
+
+if [ -r /backup/config/environment ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source /backup/config/environment
+    set +a
+fi
+
+interval="${BACKUP_INTERVAL:-300}"
+if ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -eq 0 ]; then
+    echo "$(date -Is) BACKUP_INTERVAL=$interval is not a positive number of seconds, using 300"
+    interval=300
+fi
+echo "$(date -Is) container started, image ${IMAGE_VERSION:-unknown}, a copy every $interval s"
+
+while true; do
+    start=$(date +%s)
+    backup-once
+    next=$((start + interval))
+    now=$(date +%s)
+    [ "$next" -gt "$now" ] && sleep $((next - now))
+done

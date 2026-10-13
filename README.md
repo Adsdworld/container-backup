@@ -12,13 +12,13 @@ container whose folders it can mount.
 
 ## Contract
 
-- It mounts the folders to copy read-only under `/source`, and `/data`
+- It mounts the folder to copy read-only at `SOURCE_FOLDER`, and `/data`
   read-write. The watched container never mounts `/data`.
 - It pulls: it receives nothing from the watched container.
 - It has no network.
-- What it copies is data, never instructions: nothing from `/source` is run,
-  and the `.gitignore` and `.gitattributes` found there are not honoured, so
-  nothing can be hidden from the copy or changed on the way in.
+- What it copies is data, never instructions: nothing from `SOURCE_FOLDER` is
+  run, and the `.gitignore` and `.gitattributes` found there are not honoured,
+  so nothing can be hidden from the copy or changed on the way in.
 
 ## Run
 
@@ -29,27 +29,39 @@ services:
     network_mode: none
     cap_drop: [ALL]
     cap_add: [DAC_READ_SEARCH]
+    environment:
+      BACKUP_INTERVAL: "300"
     volumes:
-      - ./backup/config:/config:ro
       - ./backup/data:/data
       - ./agent:/source/agent:ro
       - ./firewall/config:/source/firewall:ro
 ```
 
-`/config/config`, required:
+| Variable | Default | Description |
+|---|---|---|
+| `BACKUP_INTERVAL` | `300` | Seconds between the starts of two copies. |
+| `SOURCE_FOLDER` | `/source` | The folder whose content is copied. |
 
-```
-interval 300
+An invalid `BACKUP_INTERVAL` stops the container.
+
+## Health check
+
+`backup-health` prints `Ok` when `SOURCE_FOLDER` can be read and `/data` can
+be written, and the reason otherwise. The image declares it: ready at the
+first `Ok`, not ready at the first failure.
+
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --start-interval=1s --retries=1 \
+    CMD backup-health | grep -qx Ok
 ```
 
-`interval` is the number of seconds between the starts of two copies.
-[`examples/config`](examples/config) is a complete file.
+It is a command, not an HTTP endpoint: the container has no network.
 
 ## What it does
 
-Every `interval` seconds:
+Every `BACKUP_INTERVAL` seconds:
 
-1. It copies the content of `/source` into `/data`, without the `.git` folders
+1. It copies the content of `SOURCE_FOLDER` into `/data`, without the `.git` folders
    it finds there. Symbolic links are copied as links, never followed.
 2. It commits `/data` when something changed, with the date and time as the
    message.
@@ -68,7 +80,7 @@ git -C backup/data show 'HEAD@{yesterday}:agent/data/CLAUDE.md'
 ```
 
 A file changed and changed back between two copies leaves no trace: the
-shorter `interval`, the smaller this window.
+shorter `BACKUP_INTERVAL`, the smaller this window.
 
 ## License
 

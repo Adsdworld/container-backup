@@ -1,8 +1,6 @@
 #!/bin/bash
 set -uo pipefail
 
-CONFIG=/config/config
-SOURCE=/source
 DATA=/data
 EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
@@ -17,31 +15,17 @@ git_data() {
         -c user.name=backup -c user.email=backup@localhost "$@"
 }
 
-if [ ! -r "$CONFIG" ]; then
-    log "$CONFIG cannot be read"
-    exit 1
-fi
-interval=""
-while read -r keyword value rest || [ -n "$keyword" ]; do
-    [ -z "$keyword" ] && continue
-    if [ "$keyword" = interval ] && [[ "$value" =~ ^[1-9][0-9]*$ ]] && [ -z "$rest" ]; then
-        interval="$value"
-    else
-        log "$CONFIG: invalid line '$keyword $value $rest', expected 'interval SECONDS'"
-        exit 1
-    fi
-done < "$CONFIG"
-if [ -z "$interval" ]; then
-    log "$CONFIG: no 'interval SECONDS' line"
+if ! [[ "$BACKUP_INTERVAL" =~ ^[1-9][0-9]*$ ]]; then
+    log "BACKUP_INTERVAL=$BACKUP_INTERVAL is not a positive number of seconds"
     exit 1
 fi
 
 [ -d "$DATA/.git" ] || git_data init -q -b main
-log "container started, image ${IMAGE_VERSION:-unknown}, a copy every $interval s"
+log "container started, image ${IMAGE_VERSION:-unknown}, a copy of $SOURCE_FOLDER every $BACKUP_INTERVAL s"
 
 while true; do
     start=$(date +%s)
-    if ! rsync -rlpt --delete --no-specials --no-devices --exclude .git "$SOURCE/" "$DATA/"; then
+    if ! rsync -rlpt --delete --no-specials --no-devices --exclude .git "$SOURCE_FOLDER/" "$DATA/"; then
         log "the copy is incomplete"
     fi
     git_data add --all --force .
@@ -51,7 +35,7 @@ while true; do
         git_data commit -q -m "$(date -Is)"
         log "copied:$(git_data show --shortstat --format= HEAD)"
     fi
-    next=$((start + interval))
+    next=$((start + BACKUP_INTERVAL))
     now=$(date +%s)
     [ "$next" -gt "$now" ] && sleep $((next - now))
 done

@@ -1,25 +1,56 @@
 #!/bin/bash
-# Runs a copy now, then every BACKUP_INTERVAL seconds, counted from the start
-# of the previous copy.
 set -uo pipefail
 
-if [ -r /backup/config/environment ]; then
-    set -a
-    # shellcheck source=/dev/null
-    source /backup/config/environment
-    set +a
+CONFIG=/config/config
+SOURCE=/source
+DATA=/data
+EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+
+log() {
+    echo "$(date -Is) $*"
+}
+
+git_data() {
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$DATA" \
+        -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.autocrlf=false \
+        -c core.excludesFile=/dev/null -c "attr.tree=$EMPTY_TREE" \
+        -c user.name=backup -c user.email=backup@localhost "$@"
+}
+
+if [ ! -r "$CONFIG" ]; then
+    log "$CONFIG cannot be read"
+    exit 1
+fi
+interval=""
+while read -r keyword value rest || [ -n "$keyword" ]; do
+    [ -z "$keyword" ] && continue
+    if [ "$keyword" = interval ] && [[ "$value" =~ ^[1-9][0-9]*$ ]] && [ -z "$rest" ]; then
+        interval="$value"
+    else
+        log "$CONFIG: invalid line '$keyword $value $rest', expected 'interval SECONDS'"
+        exit 1
+    fi
+done < "$CONFIG"
+if [ -z "$interval" ]; then
+    log "$CONFIG: no 'interval SECONDS' line"
+    exit 1
 fi
 
-interval="${BACKUP_INTERVAL:-300}"
-if ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -eq 0 ]; then
-    echo "$(date -Is) BACKUP_INTERVAL=$interval is not a positive number of seconds, using 300"
-    interval=300
-fi
-echo "$(date -Is) container started, image ${IMAGE_VERSION:-unknown}, a copy every $interval s"
+[ -d "$DATA/.git" ] || git_data init -q -b main
+log "container started, image ${IMAGE_VERSION:-unknown}, a copy every $interval s"
 
 while true; do
     start=$(date +%s)
-    backup-once
+    if ! rsync -rlpt --delete --no-specials --no-devices --exclude .git "$SOURCE/" "$DATA/"; then
+        log "the copy is incomplete"
+    fi
+    git_data add --all --force .
+    if git_data diff --cached --quiet; then
+        log "nothing changed"
+    else
+        git_data commit -q -m "$(date -Is)"
+        log "copied:$(git_data show --shortstat --format= HEAD)"
+    fi
     next=$((start + interval))
     now=$(date +%s)
     [ "$next" -gt "$now" ] && sleep $((next - now))

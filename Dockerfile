@@ -5,12 +5,11 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY rootfs/ /
-RUN chmod 755 /usr/local/bin/backup-start /usr/local/bin/backup-once
+RUN chmod 755 /usr/local/bin/backup-start
 
 ARG IMAGE_VERSION=dev
-ENV IMAGE_VERSION=$IMAGE_VERSION \
-    BACKUP_INTERVAL=300
+ENV IMAGE_VERSION=$IMAGE_VERSION
 
-VOLUME ["/backup/config", "/backup/data"]
-WORKDIR /backup/data
+VOLUME ["/config", "/data"]
+WORKDIR /data
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/backup-start"]

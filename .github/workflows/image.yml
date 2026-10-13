@@ -24,7 +24,6 @@ jobs:
       - name: Check the scripts
         run: |
           bash -n rootfs/usr/local/bin/backup-start
-          bash -n rootfs/usr/local/bin/backup-once
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck rootfs/usr/local/bin/*
       - name: Image name
@@ -50,39 +49,38 @@ jobs:
       - name: Smoke test
         run: |
           set -u
-          # smoke/data is left to Docker: it creates it owned by root, which the
-          # container can write without DAC_OVERRIDE.
-          mkdir -p smoke/source/scripts
-          git config --global user.name test
-          git config --global user.email test@localhost
-          git -C smoke/source/scripts init -q -b main
-          echo one > smoke/source/scripts/run.sh
-          git -C smoke/source/scripts add . && git -C smoke/source/scripts commit -qm one
-          echo notes > smoke/source/CLAUDE.md
+          mkdir -p smoke/config smoke/source/dossier1/repo
+          printf 'interval 2\n' > smoke/config/config
+          echo one > smoke/source/file1
+          echo two > smoke/source/dossier1/file2
+          git -C smoke/source/dossier1/repo init -q
           printf '*\n' > smoke/source/.gitignore
-          printf '#!/bin/sh\ntouch /backup/data/PWNED\n' > smoke/source/scripts/.git/hooks/pre-upload
-          chmod +x smoke/source/scripts/.git/hooks/pre-upload
 
           docker run -d --name backup --network none --cap-drop ALL --cap-add DAC_READ_SEARCH \
-            -e BACKUP_INTERVAL=3 \
-            -v "$PWD/smoke/source:/source/agent:ro" -v "$PWD/smoke/data:/backup/data" \
+            -v "$PWD/smoke/config:/config:ro" -v "$PWD/smoke/source:/source:ro" -v "$PWD/smoke/data:/data" \
             container-backup:test
-          sleep 6
+          sleep 5
           docker logs backup
-          sudo git -C smoke/data/files log --oneline | grep -q 'Copy of'
-          sudo git -C smoke/data/files ls-files | grep -qx agent/CLAUDE.md
-          sudo git -C smoke/data/repositories/agent/scripts.git rev-parse refs/source/heads/main
+          sudo git -C smoke/data ls-files | sort > files
+          printf '%s\n' .gitignore dossier1/file2 file1 | diff - files
+          sudo test ! -e smoke/data/dossier1/repo/.git
 
-          # The watched container rewrites its history.
-          git -C smoke/source/scripts commit -q --amend -m forged
-          sleep 6
+          echo changed > smoke/source/file1
+          rm smoke/source/dossier1/file2
+          sleep 5
           docker logs backup
-          sudo grep -q 'heads/main was rewritten' smoke/data/ALERTS
-          sudo git -C smoke/data/repositories/agent/scripts.git log --format=%s \
-            "$(sudo git -C smoke/data/repositories/agent/scripts.git for-each-ref --format='%(refname)' refs/rewritten/)" \
-            | grep -qx one
-          test ! -e smoke/data/PWNED
+          test "$(sudo git -C smoke/data show HEAD:file1)" = changed
+          test "$(sudo git -C smoke/data show HEAD~1:dossier1/file2)" = two
+          sudo git -C smoke/data log --format=%s | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
           test "$(docker inspect -f '{{.State.Running}}' backup)" = true
+          docker rm -f backup
+
+          printf 'every 5\n' > smoke/config/config
+          docker run -d --name backup -v "$PWD/smoke/config:/config:ro" -v "$PWD/smoke/source:/source:ro" \
+            -v "$PWD/smoke/data:/data" container-backup:test
+          sleep 3
+          docker logs backup 2>&1 | grep -q 'invalid line'
+          test "$(docker inspect -f '{{.State.Running}}' backup)" = false
           docker rm -f backup
       - name: Push
         if: github.ref == 'refs/heads/main'

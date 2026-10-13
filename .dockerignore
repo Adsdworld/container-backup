@@ -1,5 +1,6 @@
 .git/
 .github/
+examples/
 *.md
 Dockerfile
 .dockerignore

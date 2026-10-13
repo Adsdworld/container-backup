@@ -21,7 +21,7 @@ if ! [[ "$BACKUP_INTERVAL" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 [ -d "$DATA/.git" ] || git_data init -q -b main
-log "container started, image ${IMAGE_VERSION:-unknown}, a copy of $SOURCE_FOLDER every $BACKUP_INTERVAL s"
+log "container started, image $IMAGE_VERSION, a copy of $SOURCE_FOLDER every $BACKUP_INTERVAL s"
 
 while true; do
     start=$(date +%s)
